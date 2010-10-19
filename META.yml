@@ -1,0 +1,21 @@
+---
+name: Win32-PEFile
+version: 0.700001
+author:
+  - 'Peter Jaquiery <grandpa@cpan.org>'
+abstract: Portable Executable File parser
+license: perl
+resources:
+  license: http://dev.perl.org/licenses/
+build_requires:
+  Test::More: 0
+configure_requires:
+  Module::Build: 0.340201
+provides:
+  Win32::PEFile:
+    file: lib/Win32/PEFile.pm
+    version: 0.700001
+generated_by: Module::Build version 0.340201
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4

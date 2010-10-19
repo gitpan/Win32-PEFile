@@ -1,0 +1,10 @@
+Changes
+lib/Win32/PEFile.pm
+LICENSE
+Makefile.PL
+MANIFEST
+README
+t/01_PEFile.t
+t/PEFile.exe
+Todo
+META.yml
