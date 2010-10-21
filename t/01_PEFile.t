@@ -3,8 +3,8 @@ use warnings;
 
 use Test::More tests => 9;
 
-use constant kTestFile => 'PEFile.exe';
-use constant kBadFile => '01_PEFile.t';
+use constant kTestFile => 't/PEFile.exe';
+use constant kBadFile => 't/01_PEFile.t';
 
 =head1 NAME
 
@@ -20,7 +20,7 @@ See tests in the ../xt folder for more comprehensive release tests.
 =cut
 
 BEGIN {
-    use lib '../lib';    # For development testing
+    use lib 'lib';    # For development testing
     use_ok ("Win32::PEFile");
 }
 
@@ -37,7 +37,7 @@ is ($strs->{'ProductVersion'}, '1, 0, 0, 1', "Get Product version");
 $pe = Win32::PEFile->new (-file => kBadFile);
 ok (! $pe->isOk (), "Not ok for non-PE file");
 is ($pe->lastError (), <<ERROR, "lastError set for non-PE file");
-Error in PE file 01_PEFile.t: No MZ header found
+Error in PE file t/01_PEFile.t: No MZ header found
 
 ERROR
 

@@ -4,7 +4,7 @@ use warnings;
 use Encode;
 use Carp;
 
-my $VERSION = 0.700_001;
+our $VERSION = '0.7001';
 
 #-- Constant data
 
@@ -744,7 +744,23 @@ L<http://search.cpan.org/dist/Win32-PEFile>
 
 =head1 SEE ALSO
 
+=head2 Related documentation
+
 http://kishorekumar.net/pecoff_v8.1.htm
+
+=head2 Win32::Exe and Win32::PEFile
+
+Win32::PEFile overlaps in functionality with Win32::Exe. Win32::Exe is a much
+more mature module and is more comprehensive. The only current (small)
+disadvantages of Win32::Exe are that it is not pure Perl and that has a larger
+dependency tree than Win32::PEFile.
+
+For some applications a larger problem with Win32::Exe is that some file editing
+operations are not portable across systems.
+
+The intent is that Win32::PEFile will remain pure Perl and low dependency. Over
+time PEFile will acquire various editing functions and will remain both cross-
+platform and endien agnostic.
 
 =head1 AUTHOR
 

@@ -1,4 +1,8 @@
 Revision history for Perl module Win32::PEFile
 
+0.7001 Fri Oct 22 00:14:19 2010
+    - fix test file path.
+    - add mention of Win32::Exe to documentation
+
 0.7000_01 Sat Oct 9 13:35:34 2010
     - original version; created by ExtUtils::ModuleMaker 0.49
