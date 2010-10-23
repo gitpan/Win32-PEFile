@@ -1,6 +1,6 @@
 ---
 name: Win32-PEFile
-version: 0.7001
+version: 0.7002
 author:
   - 'Peter Jaquiery <grandpa@cpan.org>'
 abstract: Portable Executable File parser
@@ -14,7 +14,7 @@ configure_requires:
 provides:
   Win32::PEFile:
     file: lib/Win32/PEFile.pm
-    version: 0.7001
+    version: 0.7002
 generated_by: Module::Build version 0.340201
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html

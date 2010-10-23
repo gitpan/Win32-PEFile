@@ -1,5 +1,9 @@
 Revision history for Perl module Win32::PEFile
 
+0.7002 Sat Oct 23 13:54:34 2010
+    - Fix packing issue that treated .exe file as text and "fixed" line ends
+    - Use binmode everywhere rather than :raw I/O layer only in some places
+
 0.7001 Fri Oct 22 00:14:19 2010
     - fix test file path.
     - add mention of Win32::Exe to documentation

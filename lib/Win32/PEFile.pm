@@ -4,7 +4,7 @@ use warnings;
 use Encode;
 use Carp;
 
-our $VERSION = '0.7001';
+our $VERSION = '0.7002';
 
 #-- Constant data
 
@@ -63,9 +63,9 @@ sub _parseFile {
     my $buffer = '';
 
     eval {
-        open my $peFile, '<:raw', $self->{'-file'}
+        open my $peFile, '<', $self->{'-file'}
             or die "unable to open file - $!\n";
-
+        binmode ($peFile);
         read $peFile, $buffer, 256, 0 or die "file read error: $!\n";
 
         die "No MZ header found\n" if $buffer !~ /^MZ/;
@@ -260,8 +260,9 @@ sub getEntryPoint {
 
     my $edataHdr = $self->{COFF}{'!DataDir'}{'.edata'};
 
-    open my $peFile, '<:raw', $self->{'-file'}
+    open my $peFile, '<', $self->{'-file'}
         or die "unable to open file - $!\n";
+    binmode ($peFile);
     seek $peFile, $edataHdr->{filePos}, 0;
     read $peFile, (my $eData), $edataHdr->{size};
 
@@ -306,7 +307,6 @@ sub getVersionStrings {
     my ($self, $lang) = @_;
 
     $lang = $self->_parseVersionInfo ($lang);
-
     return $self->{rsrc}{VERSION}{1}{$lang}{StringFileInfo};
 }
 
@@ -329,9 +329,9 @@ sub _parseVersionInfo {
     if (! $self->{rsrc}{VERSION}{1}) {
         my $rsrcHdr = $self->{COFF}{'!DataDir'}{'.rsrc'};
 
-        open my $peFile, '<:raw', $self->{'-file'}
+        open my $peFile, '<', $self->{'-file'}
             or die "unable to open file - $!\n";
-
+        binmode ($peFile);
         $self->{rsrc} = {};
         $self->_parseRsrcTable ($self->{rsrc}, $peFile, 0, $rsrcHdr->{filePos});
         close $peFile;
@@ -356,7 +356,9 @@ sub _parseVersionInfo {
     return $lang if exists $self->{rsrc}{VERSION}{1}{$lang}{FixedFileInfo};
 
     my $rsrcEntry = $self->{rsrc}{VERSION}{1}{$lang};
-    open my $resIn, '<', \$rsrcEntry->{rsrcData};
+    open my $resIn, '<', \$rsrcEntry->{rsrcData}
+        or die "Can't open raw handle on string: $!\n";
+    binmode ($resIn);
 
     while (read $resIn, (my $data), 6) {
         my %header = (rsrcOffset => $rsrcEntry->{rsrcOffset});
@@ -445,6 +447,7 @@ sub _parseStringFileInfo {
     read $resIn, (my $strTables), $header->{length} - 34 - $padding;
     seek $resIn, (tell $resIn) % 4, 1; # Skip record end padding bytes
     open my $strTblIn, '<', \$strTables;
+    binmode ($strTblIn);
 
     while (read $strTblIn, (my $hdrData), 6) {
 
@@ -465,6 +468,7 @@ sub _parseStringFileInfo {
         seek $strTblIn, (tell $strTblIn) % 4, 1; # Skip padding bytes
         read $strTblIn, (my $stringsData), $strTblHdr{length} - tell $strTblIn;
         open my $stringsIn, '<', \$stringsData;
+        binmode ($stringsIn);
 
         while (read $stringsIn, (my $strData), 6) {
 
@@ -518,6 +522,7 @@ sub _parseVarFileInfo {
     read $resIn, (my $varData), $header->{length} - 28 - $padding;
     seek $resIn, (tell $resIn) % 4, 1; # Skip record end padding bytes
     open my $varIn, '<', \$varData;
+    binmode ($varIn);
 
     while (read $varIn, (my $hdrData), 6) {
 
