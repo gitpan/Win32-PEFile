@@ -4,7 +4,7 @@ use warnings;
 use Encode;
 use Carp;
 
-our $VERSION = '0.7002';
+our $VERSION = '0.7003';
 
 #-- Constant data
 
@@ -416,6 +416,7 @@ sub _parseFixedFileInfo {
             )
         }
         = unpack ('V13', $data);
+    die "Beyond eof in _parseFixedFileInfo\n" if eof $resIn;
     seek $resIn, (tell $resIn) % 4, 1; # Skip padding bytes
 
     $rsrcEntry->{FixedFileInfo} = \%fixedFileInfo;
@@ -440,11 +441,13 @@ sub _parseStringFileInfo {
     #};
 
     my $padding = (tell $resIn) % 4;
+    die "Beyond eof in _parseStringFileInfo\n" if eof $resIn;
     seek $resIn, $padding, 1; # Skip padding bytes following key
 
     # Read the entire string file info record
     my $pos = tell $resIn;
     read $resIn, (my $strTables), $header->{length} - 34 - $padding;
+    die "Beyond eof in _parseStringFileInfo\n" if eof $resIn;
     seek $resIn, (tell $resIn) % 4, 1; # Skip record end padding bytes
     open my $strTblIn, '<', \$strTables;
     binmode ($strTblIn);
@@ -465,6 +468,7 @@ sub _parseStringFileInfo {
         @strTblHdr{qw(length valueLength isText)} = unpack ('vvv', $hdrData);
         read $strTblIn, $strTblHdr{langCP}, 16;
         $strTblHdr{langCP} = Encode::decode ('UTF-16LE', $strTblHdr{langCP});
+        die "Beyond eof in _parseStringFileInfo\n" if eof $strTblIn;
         seek $strTblIn, (tell $strTblIn) % 4, 1; # Skip padding bytes
         read $strTblIn, (my $stringsData), $strTblHdr{length} - tell $strTblIn;
         open my $stringsIn, '<', \$stringsData;
@@ -489,7 +493,8 @@ sub _parseStringFileInfo {
             $strData =~ s/\x00\x00+/\x00/g;
             my ($name, $str) = split "\x00", $strData;
             $stringFileInfo{$name} = $str;
-            seek $stringsIn, (tell $stringsIn) % 4, 1; # Skip padding bytes
+            # Skip padding bytes
+            seek $stringsIn, (tell $stringsIn) % 4, 1 if ! eof $stringsIn;
         }
     }
 
@@ -515,12 +520,14 @@ sub _parseVarFileInfo {
     #};
 
     my $padding = (tell $resIn) % 4;
+    die "Beyond eof in _parseVarFileInfo\n" if eof $resIn;
     seek $resIn, $padding, 1; # Skip padding bytes following key
 
     # Read the entire var file info record
     my $pos = tell $resIn;
     read $resIn, (my $varData), $header->{length} - 28 - $padding;
-    seek $resIn, (tell $resIn) % 4, 1; # Skip record end padding bytes
+        # Skip record end padding bytes
+    seek $resIn, (tell $resIn) % 4, 1 if ! eof $resIn;
     open my $varIn, '<', \$varData;
     binmode ($varIn);
 
@@ -541,7 +548,7 @@ sub _parseVarFileInfo {
         read $varIn, $varHdr{key}, 22;
         $varHdr{key} = Encode::decode ('UTF-16LE', $varHdr{key});
         my $padding = (tell $varIn) % 4;
-        seek $varIn, $padding, 1; # Skip padding bytes following key
+        seek $varIn, $padding, 1 if ! eof $varIn; # Skip padding bytes following key
         read $varIn, (my $value), $varHdr{length} - 28 - $padding;
         @{$varFileInfo{langCPIds}} = unpack('V*', $value);
     }

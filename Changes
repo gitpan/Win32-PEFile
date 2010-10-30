@@ -1,5 +1,8 @@
 Revision history for Perl module Win32::PEFile
 
+0.7003 Sat Oct 30 23:45:23 2010
+    - Provide workaround for 5.12.2 handling of read beyond end of string file
+
 0.7002 Sat Oct 23 13:54:34 2010
     - Fix packing issue that treated .exe file as text and "fixed" line ends
     - Use binmode everywhere rather than :raw I/O layer only in some places
