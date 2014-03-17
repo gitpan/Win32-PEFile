@@ -3,635 +3,63 @@ use strict;
 use warnings;
 use Encode;
 use Carp;
+use Win32::PEFile::PEBase;
+use Win32::PEFile::PEWriter;
+use Win32::PEFile::PEReader;
+use Win32::PEFile::PEConstants;
 
-our $VERSION = '0.7003';
+use vars qw($VERSION);
 
-#-- Constant data
+$Win32::PEFile::VERSION = '0.7004';
 
-my %rsrcTypes = (
-    1  => 'CURSOR',
-    2  => 'BITMAP',
-    3  => 'ICON',
-    4  => 'MENU',
-    5  => 'DIALOG',
-    6  => 'STRING',
-    7  => 'FONTDIR',
-    8  => 'FONT',
-    9  => 'ACCELERATOR',
-    10 => 'RCDATA',
-    11 => 'MESSAGETABLE',
-    12 => 'GROUP_CURSOR',
-    13 => 'GROUP_ICON',
-    16 => 'VERSION',
-    17 => 'DLGINCLUDE',
-    19 => 'PLUGPLAY',
-    20 => 'VXD',
-    21 => 'ANICURSOR',
-    22 => 'ANIICON',
-    23 => 'HTML',
-    24 => 'MANIFEST',
-);
+push @Win32::PEFile::ISA, 'Win32::PEFile::PEBase';
 
-#-- Members
 
 sub new {
     my ($class, %params) = @_;
-    my $self = bless \%params, $class;
+    my $self = $class->SUPER::new(%params);
 
-    die "Parameter -file is required for $class->new ()\n"
-        if !exists $params{'-file'};
-    $self->{ok} = eval {$self->_parseFile ()};
+    if ($params{'-create'}) {
+        $self->{writer} = Win32::PEFile::PEWriter->new (owner => $self, %params);
+    } elsif ($params{'-file'}) {
+        $self->{reader} = Win32::PEFile::PEReader->new (owner => $self, %params);
+    }
+
     $self->{err} = $@ || '';
     return $self;
 }
 
 
-sub isOk {
+sub getSectionNames {
     my ($self) = @_;
-    return $self->{ok};
+    my @names = keys %{$self->{DataDir}};
+    my @sections = grep {$self->{DataDir}{$_}{size}} @names;
+
+    return @sections;
 }
 
 
-sub lastError {
+sub setMSDOSStub {
+    my ($self, $stub) = @_;
+
+    $self->{MSDOSStub} = $stub;
+}
+
+
+sub getMSDOSStub {
     my ($self) = @_;
-    return $self->{err};
+
+    return $self->{MSDOSStub};
 }
 
 
-sub _parseFile {
-    my ($self) = @_;
-    my $buffer = '';
+sub writeFile {
+    my ($self, %params) = @_;
 
-    eval {
-        open my $peFile, '<', $self->{'-file'}
-            or die "unable to open file - $!\n";
-        binmode ($peFile);
-        read $peFile, $buffer, 256, 0 or die "file read error: $!\n";
+    $self->{writer} = Win32::PEFile::PEWriter->new (owner => $self, %params)
+        if ! $self->{writer};
 
-        die "No MZ header found\n" if $buffer !~ /^MZ/;
-
-        my $peOffset = substr ($buffer, 0x3c, 4);
-        $peOffset = unpack ('V', $peOffset);
-        seek $peFile, $peOffset, 0;
-
-        (read $peFile, $buffer, 4 and $buffer =~ /^PE\0\0/)
-            or die "corrupt or not a PE file \n";
-
-        read $peFile, $buffer, 20, 0 or die "file read error: $!\n";
-        @{$self->{COFF}}{
-            qw(
-                Machine NumberOfSections TimeDateStamp PointerToSymbolTable
-                NumberOfSymbols SizeOfOptionalHeader Characteristics
-                )
-            }
-            = unpack ('vvVVVvv', $buffer);
-
-        if ($self->{COFF}{SizeOfOptionalHeader}) {
-            my $opt = $self->{OptionalHeader} = {};
-            my @ohFields = qw (
-                Magic MajorLinkerVersion MinorLinkerVersion SizeOfCode
-                SizeOfInitializedData SizeOfUninitializedData
-                AddressOfEntryPoint BaseOfCode
-                );
-
-            read $peFile, $opt->{raw}, $self->{COFF}{SizeOfOptionalHeader}, 0;
-            @{$opt}{@ohFields} = unpack ('vCCVVVVV', $opt->{raw});
-
-            my $blk = substr $opt->{raw}, 24;
-            if ($opt->{Magic} == 0x20B) {
-                $self->_parsePE32PlusOpt ($blk);
-            } else {
-                $self->_parsePE32Opt ($blk);
-            }
-
-            $self->_parseSectionsTable ($peFile);
-            $self->_findDataDirData    ($peFile);
-        }
-
-        close $peFile;
-    };
-
-    die "Error in PE file $self->{'-file'}: $@\n" if $@;
-    return 1;
-}
-
-
-sub _parsePE32Opt {
-    my ($self, $blk) = @_;
-    my $len    = length $blk;
-    my @fields = (
-        qw(
-            ImageBase SectionAlignment FileAlignment MajorOperatingSystemVersion
-            MinorOperatingSystemVersion MajorImageVersion MinorImageVersion
-            MajorSubsystemVersion MinorSubsystemVersion Win32VersionValue
-            SizeOfImage SizeOfHeaders CheckSum Subsystem DllCharacteristics
-            SizeOfStackReserve SizeOfStackCommit SizeOfHeapReserve
-            SizeOfHeapCommit LoaderFlags NumberOfRvaAndSizes )
-    );
-
-    $self->{OptionalHeader}{BaseOfData} = unpack ('V', substr $blk, 0, 4, '');
-    @{$self->{OptionalHeader}}{@fields} =
-        unpack ('VVVvvvvvvVVVVvvVVVVVV', $blk);
-
-    # $blk passed in starts at offset 20 and 4 bytes are removed by substr above
-    # so offset to data directory is 96 - (24 + 4) = 68
-    $self->_parseDataDirectory (substr $blk, 68);
-}
-
-
-sub _parsePE32PlusOpt {
-    my ($self, $blk) = @_;
-    my $len    = length $blk;
-    my @fields = (
-        qw(
-            ImageBaseL ImageBaseH SectionAlignment FileAlignment
-            MajorOperatingSystemVersion MinorOperatingSystemVersion
-            MajorImageVersion MinorImageVersion MajorSubsystemVersion
-            MinorSubsystemVersion Win32VersionValue SizeOfImage SizeOfHeaders
-            CheckSum Subsystem DllCharacteristics SizeOfStackReserveL
-            SizeOfStackReserveH SizeOfStackCommitL SizeOfStackCommitH
-            SizeOfHeapReserveL SizeOfHeapReserveH SizeOfHeapCommitL
-            SizeOfHeapCommitH LoaderFlags NumberOfRvaAndSizes )
-    );
-
-    @{$self->{OptionalHeader}}{@fields} =
-        unpack ('VVVVvvvvvvVVVVvvVVVVVVVVVV', $blk);
-
-    # $blk passed in starts at offset 20 so offset to data directory is 112 - 24
-    $self->_parseDataDirectory (substr $blk, 88);
-}
-
-
-sub _parseDataDirectory {
-    my ($self, $blk) = @_;
-    my $len    = length $blk;
-    my @fields = qw(.edata .idata .rsrc .pdata certTable .reloc .debug
-        Architecture GlobalPtr .tls LoadConfig BoundImport IAT
-        DelayImportDescriptor .cormeta Reserved
-        );
-    my @entries;
-
-    for (1 .. $self->{OptionalHeader}{NumberOfRvaAndSizes}) {
-        my $addr = unpack ('V', substr $blk, 0, 4, '');
-        my $size = unpack ('V', substr $blk, 0, 4, '');
-
-        push @entries, {imageRVA => $addr, size => $size};
-        last if !length $blk;
-    }
-
-    @{$self->{COFF}{'!DataDir'}}{@fields} = @entries;
-    return;
-}
-
-
-sub _parseSectionsTable {
-    my ($self, $peFile) = @_;
-
-    my $sections = $self->{sections} = {};
-    my @secFields = (
-        qw(
-            Name VirtualSize VirtualAddress SizeOfRawData PointerToRawData
-            PointerToRelocations PointerToLinenumbers NumberOfRelocations
-            NumberOfLinenumbers Characteristics
-            )
-    );
-
-    for (1 .. $self->{COFF}{NumberOfSections}) {
-        my %section;
-        my $raw;
-
-        read $peFile, $raw, 40, 0;
-        @section{@secFields} = unpack ('a8VVVVVVvvV', $raw);
-        $section{Name} =~ s/\x00+$//;
-        $sections->{$section{Name}} = \%section;
-    }
-}
-
-
-sub _findDataDirData {
-    my ($self, $peFile) = @_;
-
-    for my $entry (values %{$self->{COFF}{'!DataDir'}}) {
-        next if !$entry->{size};    # size is zero
-
-        for my $sectionName (keys %{$self->{sections}}) {
-            my $section = $self->{sections}{$sectionName};
-            my $fileBias =
-                $section->{VirtualAddress} - $section->{PointerToRawData};
-
-            next if $section->{VirtualAddress} > $entry->{imageRVA};
-            next
-                if $section->{VirtualAddress} + $section->{VirtualSize} <
-                    $entry->{imageRVA};
-
-            $entry->{fileBias} = $fileBias;
-            $entry->{filePos}  = $entry->{imageRVA} - $fileBias;
-            last;
-        }
-    }
-}
-
-
-sub _readSzStr {
-    my ($fh, $offset) = @_;
-    my $oldPos = tell $fh;
-    my $str    = '';
-
-    seek $fh, $offset, 0 if defined $offset;
-    read $fh, my $strBytes, 2 or die "file read error: $!\n";
-    $strBytes = 2 * unpack ('v', $strBytes);
-
-    if ($strBytes) {
-        read $fh, $str, $strBytes or die "file read error: $!\n";
-        $str = Encode::decode ('UTF-16LE', $str);
-    }
-
-    seek $fh, $oldPos, 0 if defined $offset;
-    return $str;
-}
-
-
-sub getEntryPoint {
-    my ($self, $routineName) = @_;
-
-    return if !exists $self->{COFF}{'!DataDir'}{'.edata'};
-    return exists $self->{Exports}{$routineName}
-        if exists $self->{Exports};
-
-    my $edataHdr = $self->{COFF}{'!DataDir'}{'.edata'};
-
-    open my $peFile, '<', $self->{'-file'}
-        or die "unable to open file - $!\n";
-    binmode ($peFile);
-    seek $peFile, $edataHdr->{filePos}, 0;
-    read $peFile, (my $eData), $edataHdr->{size};
-
-    my %dirTable;
-
-    @dirTable{
-        qw(
-            Flags Timestamp VerMaj VerMin NameRVA Base ATEntries Names
-            ExportTabRVA NameTabRVA OrdTabRVA
-            )
-        }
-        = unpack ('VVvvVVVVVVV', $eData);
-
-    my $nameTableFileAddr = $dirTable{NameTabRVA} - $edataHdr->{fileBias};
-
-    seek $peFile, $nameTableFileAddr, 0;
-    read $peFile, (my $nameData), $dirTable{Names} * 4;
-
-    for my $index (0 .. $dirTable{Names} - 1) {
-        my $addr = unpack ('V', substr $nameData, $index * 4, 4);
-
-        next if !$addr;
-        seek $peFile, $addr - $edataHdr->{fileBias}, 0;
-
-        my $nameStr = '';
-        my $strEnd;
-
-        read $peFile, $nameStr, 256, length $nameStr
-            while ($strEnd = index $nameStr, "\0") < 0;
-
-        my $epName = substr $nameStr, 0, $strEnd;
-
-        $self->{Exports}{$epName} = $index;
-    }
-
-    close $peFile;
-    return exists $self->{Exports}{$routineName};
-}
-
-
-sub getVersionStrings {
-    my ($self, $lang) = @_;
-
-    $lang = $self->_parseVersionInfo ($lang);
-    return $self->{rsrc}{VERSION}{1}{$lang}{StringFileInfo};
-}
-
-
-sub getFixedVersionValues {
-    my ($self, $lang) = @_;
-
-    $lang = $self->_parseVersionInfo ($lang);
-
-    return $self->{rsrc}{VERSION}{1}{$lang}{FixedFileInfo};
-}
-
-
-sub _parseVersionInfo {
-    my ($self, $lang) = @_;
-
-    return if !exists $self->{COFF}{'!DataDir'}{'.rsrc'};
-    return $lang if defined $lang && exists $self->{rsrc}{VERSION}{1}{$lang};
-
-    if (! $self->{rsrc}{VERSION}{1}) {
-        my $rsrcHdr = $self->{COFF}{'!DataDir'}{'.rsrc'};
-
-        open my $peFile, '<', $self->{'-file'}
-            or die "unable to open file - $!\n";
-        binmode ($peFile);
-        $self->{rsrc} = {};
-        $self->_parseRsrcTable ($self->{rsrc}, $peFile, 0, $rsrcHdr->{filePos});
-        close $peFile;
-        return if !exists $self->{rsrc}{VERSION}{1};
-    }
-
-    #struct VS_VERSIONINFO {
-    #  WORD  wLength;
-    #  WORD  wValueLength;
-    #  WORD  wType;
-    #  WCHAR szKey[]; // "VS_VERSION_INFO".
-    #  WORD  Padding1[];
-    #  VS_FIXEDFILEINFO Value;
-    #  WORD  Padding2[];
-    #  WORD  Children[];
-    #};
-
-    my %langs = map {$_ => 1} keys %{$self->{rsrc}{VERSION}{1}};
-
-    $lang ||= 0x0409;    # Default to US English
-    $lang = (keys %langs)[0] if !exists $langs{$lang};
-    return $lang if exists $self->{rsrc}{VERSION}{1}{$lang}{FixedFileInfo};
-
-    my $rsrcEntry = $self->{rsrc}{VERSION}{1}{$lang};
-    open my $resIn, '<', \$rsrcEntry->{rsrcData}
-        or die "Can't open raw handle on string: $!\n";
-    binmode ($resIn);
-
-    while (read $resIn, (my $data), 6) {
-        my %header = (rsrcOffset => $rsrcEntry->{rsrcOffset});
-
-        @header{qw(length valueLength isText)} = unpack ('vvv', $data);
-        read $resIn, $header{type}, 4;
-        $header{type} = Encode::decode ('UTF-16LE', $header{type});
-
-        if ($header{type} eq 'VS') {
-            $self->_parseFixedFileInfo ($rsrcEntry, $resIn, \%header);
-        } elsif ($header{type} eq 'Va') {
-            $self->_parseVarFileInfo ($rsrcEntry, $resIn, \%header);
-        } elsif ($header{type} eq 'St') {
-            $self->_parseStringFileInfo ($rsrcEntry, $resIn, \%header);
-        } else {
-            die "Unknown version resource info prefix: $header{type}\n";
-        }
-    }
-
-    close $resIn;
-    return $lang;
-}
-
-
-sub _parseFixedFileInfo {
-    my ($self, $rsrcEntry, $resIn, $header) = @_;
-
-    read $resIn, (my $key), 26;    # remainder of key
-    read $resIn, (my $data), 4;    # null terminator and padding
-    $header->{type} = $header->{type} . Encode::decode ('UTF-16LE', $key);
-
-    #struct VS_FIXEDFILEINFO {
-    #  DWORD dwSignature;
-    #  DWORD dwStrucVersion;
-    #  DWORD dwFileVersionMS;
-    #  DWORD dwFileVersionLS;
-    #  DWORD dwProductVersionMS;
-    #  DWORD dwProductVersionLS;
-    #  DWORD dwFileFlagsMask;
-    #  DWORD dwFileFlags;
-    #  DWORD dwFileOS;
-    #  DWORD dwFileType;
-    #  DWORD dwFileSubtype;
-    #  DWORD dwFileDateMS;
-    #  DWORD dwFileDateLS;
-    #};
-    my %fixedFileInfo;
-
-    read $resIn, $data, 52;
-    @fixedFileInfo{
-        qw(
-            dwSignature dwStrucVersion dwFileVersionMS dwFileVersionLS
-            dwProductVersionMS dwProductVersionLS dwFileFlagsMask dwFileFlags
-            dwFileOS dwFileType dwFileSubtype dwFileDateMS dwFileDateLS
-            )
-        }
-        = unpack ('V13', $data);
-    die "Beyond eof in _parseFixedFileInfo\n" if eof $resIn;
-    seek $resIn, (tell $resIn) % 4, 1; # Skip padding bytes
-
-    $rsrcEntry->{FixedFileInfo} = \%fixedFileInfo;
-}
-
-
-sub _parseStringFileInfo {
-    my ($self, $rsrcEntry, $resIn, $header) = @_;
-
-    read $resIn, (my $key), 24;    # remainder of key
-    $header->{type} = $header->{type} . Encode::decode ('UTF-16LE', $key);
-
-    my %stringFileInfo;
-
-    #struct StringFileInfo {
-    #  WORD        wLength;
-    #  WORD        wValueLength;
-    #  WORD        wType;
-    #  WCHAR       szKey[]; // "StringFileInfo"
-    #  WORD        Padding[];
-    #  StringTable Children[];
-    #};
-
-    my $padding = (tell $resIn) % 4;
-    die "Beyond eof in _parseStringFileInfo\n" if eof $resIn;
-    seek $resIn, $padding, 1; # Skip padding bytes following key
-
-    # Read the entire string file info record
-    my $pos = tell $resIn;
-    read $resIn, (my $strTables), $header->{length} - 34 - $padding;
-    die "Beyond eof in _parseStringFileInfo\n" if eof $resIn;
-    seek $resIn, (tell $resIn) % 4, 1; # Skip record end padding bytes
-    open my $strTblIn, '<', \$strTables;
-    binmode ($strTblIn);
-
-    while (read $strTblIn, (my $hdrData), 6) {
-
-        #struct StringTable {
-        #  WORD   wLength;
-        #  WORD   wValueLength;
-        #  WORD   wType;
-        #  WCHAR  szKey[]; // 8 character Unicode string
-        #  WORD   Padding[];
-        #  String Children[];
-        #};
-
-        my %strTblHdr;
-
-        @strTblHdr{qw(length valueLength isText)} = unpack ('vvv', $hdrData);
-        read $strTblIn, $strTblHdr{langCP}, 16;
-        $strTblHdr{langCP} = Encode::decode ('UTF-16LE', $strTblHdr{langCP});
-        die "Beyond eof in _parseStringFileInfo\n" if eof $strTblIn;
-        seek $strTblIn, (tell $strTblIn) % 4, 1; # Skip padding bytes
-        read $strTblIn, (my $stringsData), $strTblHdr{length} - tell $strTblIn;
-        open my $stringsIn, '<', \$stringsData;
-        binmode ($stringsIn);
-
-        while (read $stringsIn, (my $strData), 6) {
-
-            #struct String {
-            #  WORD   wLength;
-            #  WORD   wValueLength;
-            #  WORD   wType;
-            #  WCHAR  szKey[];
-            #  WORD   Padding[];
-            #  WORD   Value[];
-            #};
-
-            my %strHdr;
-
-            @strHdr{qw(length valueLength isText)} = unpack ('vvv', $strData);
-            read $stringsIn, $strData, $strHdr{length} - 6;
-            $strData = Encode::decode ('UTF-16LE', $strData);
-            $strData =~ s/\x00\x00+/\x00/g;
-            my ($name, $str) = split "\x00", $strData;
-            $stringFileInfo{$name} = $str;
-            # Skip padding bytes
-            seek $stringsIn, (tell $stringsIn) % 4, 1 if ! eof $stringsIn;
-        }
-    }
-
-    $rsrcEntry->{StringFileInfo} = \%stringFileInfo;
-}
-
-
-sub _parseVarFileInfo {
-    my ($self, $rsrcEntry, $resIn, $header) = @_;
-
-    read $resIn, (my $key), 20;    # remainder of key
-    $header->{type} = $header->{type} . Encode::decode ('UTF-16LE', $key);
-
-    my %varFileInfo;
-
-    #struct VarFileInfo {
-    #  WORD  wLength;
-    #  WORD  wValueLength;
-    #  WORD  wType;
-    #  WCHAR szKey[]; // "VarFileInfo"
-    #  WORD  Padding[];
-    #  Var   Children[];
-    #};
-
-    my $padding = (tell $resIn) % 4;
-    die "Beyond eof in _parseVarFileInfo\n" if eof $resIn;
-    seek $resIn, $padding, 1; # Skip padding bytes following key
-
-    # Read the entire var file info record
-    my $pos = tell $resIn;
-    read $resIn, (my $varData), $header->{length} - 28 - $padding;
-        # Skip record end padding bytes
-    seek $resIn, (tell $resIn) % 4, 1 if ! eof $resIn;
-    open my $varIn, '<', \$varData;
-    binmode ($varIn);
-
-    while (read $varIn, (my $hdrData), 6) {
-
-        my %varHdr;
-
-        #struct Var {
-        #  WORD  wLength;
-        #  WORD  wValueLength;
-        #  WORD  wType;
-        #  WCHAR szKey[];
-        #  WORD  Padding[];
-        #  DWORD Value[];
-        #};
-
-        @varHdr{qw(length valueLength isText)} = unpack ('vvv', $hdrData);
-        read $varIn, $varHdr{key}, 22;
-        $varHdr{key} = Encode::decode ('UTF-16LE', $varHdr{key});
-        my $padding = (tell $varIn) % 4;
-        seek $varIn, $padding, 1 if ! eof $varIn; # Skip padding bytes following key
-        read $varIn, (my $value), $varHdr{length} - 28 - $padding;
-        @{$varFileInfo{langCPIds}} = unpack('V*', $value);
-    }
-
-    $rsrcEntry->{VarFileInfo} = \%varFileInfo;
-}
-
-
-sub _parseRsrcTable {
-    my ($self, $rsrc, $fh, $filePos, $secFilePos, $level) = @_;
-    my $oldPos = tell $fh;
-
-    ++$level;
-    seek $fh, $filePos + $secFilePos, 0;
-    read $fh, (my $rData), 16;
-
-    my %dirTable;
-
-    @dirTable{
-        qw(
-            Characteristics TimeDate MajorVersion MinorVersion
-            NumNameEntries NumIDEntries
-            )
-        }
-        = unpack ('VVvvvv', $rData);
-
-    my ($numNames, $numIDs) = @dirTable{qw(NumNameEntries NumIDEntries)};
-
-    while ($numNames || $numIDs) {
-        read $fh, $rData, 8;
-
-        my ($RVAOrID, $RVA) = unpack ('VV', $rData);
-        my $addr = ($RVA & ~0x80000000);
-        my $rsrcId;
-
-        if ($numNames) {
-            # Fetch the entry name. $RVAOrID is the RVA
-            --$numNames;
-            $rsrcId = _readSzStr ($fh, ($RVAOrID & ~0x80000000) + $secFilePos);
-
-        } elsif ($numIDs) {
-            # Resource ID. $RVAOrID is the ID
-            --$numIDs;
-            $rsrcId = $RVAOrID;
-            $rsrcId = $rsrcTypes{$rsrcId}
-                if $level == 1 && exists $rsrcTypes{$rsrcId};
-        }
-
-        if (0 != ($RVA & 0x80000000)) {
-            # It's a sub table entry
-            $rsrc->{$rsrcId} = {};
-            $self->_parseRsrcTable ($rsrc->{$rsrcId}, $fh, $addr, $secFilePos,
-                $level);
-        } else {
-            # It's a data entry
-            $rsrc->{$rsrcId} =
-                $self->_readRsrcDataEntry ($fh, $RVA, $secFilePos);
-            next;
-        }
-    }
-
-    seek $fh, $oldPos, 0;
-}
-
-
-sub _readRsrcDataEntry {
-    my ($self, $fh, $offset, $secFilePos) = @_;
-    my $oldPos = tell $fh;
-    my %rsrc;
-
-    seek $fh, $offset + $secFilePos, 0;
-    read $fh, my $rData, 16 or die "file read error: $!\n";
-    my ($dataRVA, $size, $codePage) = unpack ('VVVV', $rData);
-    my $imageRVA      = $self->{COFF}{'!DataDir'}{'.rsrc'}{imageRVA};
-    my $resDataOffset = $dataRVA - $imageRVA;
-
-    $rsrc{rsrcCodepage} = $codePage;
-    $rsrc{rsrcOffset} = $offset;
-    seek $fh, $resDataOffset + $secFilePos, 0;
-    read $fh, $rsrc{rsrcData}, $size or die "file read error: $!\n";
-
-    seek $fh, $oldPos, 0;
-    return \%rsrc;
+    return $self->{writer}->writeFile();
 }
 
 
@@ -646,7 +74,7 @@ Win32::PEFile - Portable Executable File parser
 
     use Win32::PEFile;
 
-    my $pe = Win32::PEFile->new (file => 'someFile.exe');
+    my $pe = Win32::PEFile->new (-file => 'someFile.exe');
 
     print "someFile.exe has a entry point for EntryPoint1"
         if $pe->getEntryPoint ("EntryPoint1");
@@ -660,7 +88,7 @@ Win32::PEFile provides the following public methods.
 
 =over 4
 
-=item I<new (%parameters)>
+=item C<new (%parameters)>
 
 Parses a PE file and returns an object used to access the results. The following
 parameters may be passed:
@@ -673,39 +101,64 @@ The file name (and path if required) of the PE file to process.
 
 =back
 
-=item I<getEntryPoint ($entryPoint)>
+=item C<getSectionNames()>
 
-Returns true if the given entry point exists in the exports table.
+Return the list of named sections present in the PEFile.
 
-=over 4
+=item C<setMSDOSStub($stub)>
 
-=item I<$entryPoint>: required
+Set the MS-DOS stub code. C<$stub> contains the code as a raw binary blob.
 
-Name of the entry point to search for in the Exports table of the PE file.
+=item C<getMSDOSStub()>
+
+Return a string containing MS-DOS stub code as a raw binary blob.
 
 =back
 
-=item I<getVersionStrings ($language)>
+=head1 Section methods
+
+The helper module Win32::PEFile::SectionHandlers provides handlers for various
+sections. At present only a few of the standard sections are handled and
+documented here. If there are sections that you would like to be able to
+manipulate that are not currently handled enter a ticket using CPAN's request
+tracker (see below).
+
+=head2 .rsrc
+
+Resource section. At present only access to the version resource is provided,
+although the other resources are parsed internally.
+
+=over 4
+
+=item C<getVersionStrings ($language)>
 
 Returns a hash reference containing the strings in the version resource keyed
 by string name.
 
 =over 4
 
+=item C<getVersionCount ($language)>
+
+Returns a count of version resources.
+
+=over 4
+
 =item I<$language>: optional
 
-Preferred language for the strings specified as a MicroSoft LangID. US English
-is preferred by default.
-
-If the preferred language is not available one of the available languages will
-be used instead.
+Selected language specified as a MicroSoft LangID. If the language is not
+specified all language variants are counted.
 
 =back
 
-=item I<getFixedVersionValues ($language)>
+=item C<getFixedVersionValues ($language)>
 
 Returns a hash reference containing the fixed version resource values keyed
 by value name.
+
+=item C<getResourceData ($type, $name, $language)>
+
+Returns a string containg the raw data for the specified resource or undef if
+the resource doesn't exist.
 
 =over 4
 
@@ -716,6 +169,65 @@ is preferred by default.
 
 If the preferred language is not available one of the available languages will
 be used instead.
+
+=back
+
+=back
+
+=head2 .edata
+
+Exports section.
+
+=over 4
+
+=item C<getExportNames ()>
+
+Returns a list of all the named entry points.
+
+=item C<getExportOrdinalsCount ()>
+
+Returns the count of all the ordinal entry points.
+
+=item C<haveExportEntry ($entryPointName)>
+
+Returns true if the given entry point exists in the exports table. For
+compatibility with previous versions of the module C<getEntryPoint
+($entryPointName)> is provided as an alias for C<haveExportEntry
+($entryPointName)>.
+
+=over 4
+
+=item I<$entryPointName>: required
+
+Name of the entry point to search for in the Exports table of the PE file.
+
+=back
+
+=back
+
+=head2 .idata
+
+=over 4
+
+=item C<getImportNames ()>
+
+Returns a list of all the named entry points.
+
+=item C<haveImportEntry ($entryPath)>
+
+Returns true if the given entry point exists in the imports table.
+
+=over 4
+
+=item I<$entryPath>: required
+
+Path to the entry point to search for in the Imorts table of the PE file. The
+path is in the form C<'dll name/entry name'>. For example:
+
+    my $havePrintf = $pe->haveImportEntry('MSVCR80.dll/printf');
+
+would set C<$havePrintf> true if the PE file has an import entry for the
+MicroSoft C standard library version of printf.
 
 =back
 
@@ -773,6 +285,10 @@ operations are not portable across systems.
 The intent is that Win32::PEFile will remain pure Perl and low dependency. Over
 time PEFile will acquire various editing functions and will remain both cross-
 platform and endien agnostic.
+
+=head1 ACKNOWLEDGEMENTS
+
+Thank you Engin Bulanik for contributing the seed code for getVersionCount().
 
 =head1 AUTHOR
 
