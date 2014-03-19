@@ -32,7 +32,7 @@
       },
       "Win32::PEFile" : {
          "file" : "lib/Win32/PEFile.pm",
-         "version" : "0.7004"
+         "version" : "0.7005"
       },
       "Win32::PEFile::PEBase" : {
          "file" : "lib/Win32/PEFile/PEBase.pm",
@@ -85,5 +85,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "0.7004"
+   "version" : "0.7005"
 }

@@ -10,7 +10,7 @@ use Win32::PEFile::PEConstants;
 
 use vars qw($VERSION);
 
-$Win32::PEFile::VERSION = '0.7004';
+$Win32::PEFile::VERSION = '0.7005';
 
 push @Win32::PEFile::ISA, 'Win32::PEFile::PEBase';
 
@@ -135,6 +135,8 @@ although the other resources are parsed internally.
 Returns a hash reference containing the strings in the version resource keyed
 by string name.
 
+=back
+
 =over 4
 
 =item C<getVersionCount ($language)>
@@ -147,6 +149,8 @@ Returns a count of version resources.
 
 Selected language specified as a MicroSoft LangID. If the language is not
 specified all language variants are counted.
+
+=back
 
 =back
 

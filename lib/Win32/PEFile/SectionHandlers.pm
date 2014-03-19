@@ -129,14 +129,15 @@ sub addVersionResource {
     my %verStringKeys = map {$_ => undef} @kVersionStringKeys;
     my @strings = grep {exists $verStringKeys{$_}} keys %params;
 
-    $params{lang} //= 0x0409;
+    $params{lang} = 0x0409 if ! defined $params{lang};
     $params{strings}{$_} = $params{$_} for @strings;
 
+    $params{name} = 1 if ! defined $params{name};
     $self->addResource(
         data => $self->_buildVersionInfo(%params),
         lang => $params{lang},
         type => 'VERSION',
-        name => $params{name} // 1,
+        name => $params{name},
     );
 }
 
@@ -511,10 +512,10 @@ sub _parseVarFileInfo {
         @varHdr{qw(length valueLength isText)} = unpack ('vvv', $hdrData);
         read $varIn, $varHdr{key}, 22;
         $varHdr{key} = Encode::decode('UTF-16LE', $varHdr{key});
-        my $padding = (tell $varIn) % 4;
+        my $hPadding = (tell $varIn) % 4;
         # Skip padding bytes following key
-        seek $varIn, $padding, 1 if !eof $varIn;
-        read $varIn, (my $value), $varHdr{length} - 28 - $padding;
+        seek $varIn, $hPadding, 1 if !eof $varIn;
+        read $varIn, (my $value), $varHdr{length} - 28 - $hPadding;
         @{$varFileInfo{langCPIds}} = unpack ('V*', $value);
     }
 
