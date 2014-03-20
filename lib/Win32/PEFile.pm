@@ -10,7 +10,7 @@ use Win32::PEFile::PEConstants;
 
 use vars qw($VERSION);
 
-$Win32::PEFile::VERSION = '0.7005';
+$Win32::PEFile::VERSION = '0.7006';
 
 push @Win32::PEFile::ISA, 'Win32::PEFile::PEBase';
 

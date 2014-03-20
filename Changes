@@ -1,5 +1,9 @@
 Revision history for Perl module Win32::PEFile
 
+0.7006 Thu Mar 20 18:33:51 2014
+    - Remove more defined or use!
+    - Set 5.8.8 as required Perl version
+
 0.7005 Wed Mar 19 22:10:00 2014
     - Remove defined or use in a couple of places to make 5.8.8 tests happy
     - Fix a POD error flagged by CPAN Testers

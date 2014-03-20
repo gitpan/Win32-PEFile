@@ -16,7 +16,8 @@
    "prereqs" : {
       "build" : {
          "requires" : {
-            "Test::More" : "0"
+            "Test::More" : "0",
+            "perl" : "v5.8.8"
          }
       },
       "configure" : {
@@ -32,7 +33,7 @@
       },
       "Win32::PEFile" : {
          "file" : "lib/Win32/PEFile.pm",
-         "version" : "0.7005"
+         "version" : "0.7006"
       },
       "Win32::PEFile::PEBase" : {
          "file" : "lib/Win32/PEFile/PEBase.pm",
@@ -85,5 +86,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "0.7005"
+   "version" : "0.7006"
 }

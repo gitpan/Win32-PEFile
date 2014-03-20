@@ -4,6 +4,7 @@ author:
   - 'Peter Jaquiery <grandpa@cpan.org>'
 build_requires:
   Test::More: 0
+  perl: v5.8.8
 configure_requires:
   Module::Build: 0.40
 dynamic_config: 1
@@ -19,7 +20,7 @@ provides:
     version: 0
   Win32::PEFile:
     file: lib/Win32/PEFile.pm
-    version: 0.7005
+    version: 0.7006
   Win32::PEFile::PEBase:
     file: lib/Win32/PEFile/PEBase.pm
     version: 0
@@ -55,4 +56,4 @@ provides:
     version: 0
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.7005
+version: 0.7006

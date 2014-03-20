@@ -168,7 +168,8 @@ sub _measureSections {
             }
         }
 
-        my $wSec = $self->{SecData}{$secName} //= {};
+        $self->{SecData}{$secName} = {} if ! defined $self->{SecData}{$secName};
+        my $wSec = $self->{SecData}{$secName};
 
         @{$wSec->{header}}{@kSectionHeaderFields} =
             @{$section->{header}}{@kSectionHeaderFields};
@@ -443,9 +444,11 @@ sub _writeSections {
     my ($self, $peFile) = @_;
 
     for my $secName (@{$self->{sectionNames}}) {
-        my $blob   = $self->{SecData}{$secName}{blob} // '';
+        my $blob   = $self->{SecData}{$secName}{blob};
         my $pos    = tell $peFile;
         my $target = ($self->{faMasked} + $pos) & $self->{faMask};
+
+        $blob = '' if ! defined $blob;
 
         if ($pos < $target) {
             my $padding = "\0" x ($target - $pos);
